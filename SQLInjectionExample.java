@@ -1,22 +1,26 @@
 import java.sql.*;
-import java.util.Scanner;
 
-public class SQLInjectionExample {
-    public static void main(String[] args) throws SQLException {
-        Connection conn = DriverManager.getConnection("jdbc:mysql://localhost/test", "user", "password");
-        Scanner scanner = new Scanner(System.in);
-        System.out.print("Enter username: ");
-        String username = scanner.nextLine();
+public class SQLInjection {
+    public static void main(String[] args) {
+        String account_owner_id = args.length > 0 ? args[0] : "1";
+        
+        // Vulnerable SQL statement (concatenation)
+        String accountBalanceQuery = "SELECT accountNumber FROM accounts WHERE account_owner_id = '" + account_owner_id + "'";
 
-        Statement stmt = conn.createStatement();
-        // Vulnerable SQL Query (Direct user input)
-        String sql = "SELECT * FROM users WHERE username = '" + username + "'";
+        try {
+            Connection connection = DriverManager.getConnection("jdbc:mysql://localhost/test", "user", "password");
+            Statement statement = connection.createStatement();
+            ResultSet rs = statement.executeQuery(accountBalanceQuery);
 
-        ResultSet rs = stmt.executeQuery(sql);
-        while (rs.next()) {
-            System.out.println("User found: " + rs.getString("username"));
+            while (rs.next()) {
+                System.out.println("Account number: " + rs.getString("accountNumber"));
+            }
+            
+            rs.close();
+            statement.close();
+            connection.close();
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
-        stmt.close();
-        conn.close();
     }
 }
