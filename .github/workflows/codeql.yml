@@ -1,0 +1,104 @@
+name: "CodeQL Analysis (No C#)"
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: '32 3 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: c-cpp
+            build-mode: manual
+          - language: java-kotlin
+            build-mode: manual
+          - language: python
+            build-mode: none
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Java setup
+      - if: matrix.language == 'java-kotlin'
+        name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Python setup
+      - if: matrix.language == 'python'
+        name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      # Initialize CodeQL
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended,security-and-quality
+
+      # Manual build C/C++
+      - if: matrix.language == 'c-cpp'
+        name: Manual build C/C++
+        shell: bash
+        run: |
+          export CFLAGS="-g -O0 -fno-omit-frame-pointer -Wall -Wextra"
+          export CXXFLAGS="-g -O0 -fno-omit-frame-pointer -Wall -Wextra"
+          mkdir -p build && cd build
+          find ../ -name '*.c' -exec gcc $CFLAGS -c {} \;
+          find ../ -name '*.cpp' -exec g++ $CXXFLAGS -c {} \;
+
+      # Manual build Java/Kotlin
+      - if: matrix.language == 'java-kotlin'
+        name: Manual build Java/Kotlin
+        shell: bash
+        run: |
+          if [ -f "pom.xml" ]; then
+            mvn clean compile dependency:resolve -DskipTests || echo "⚠️ Maven build warnings"
+          elif [ -f "build.gradle" ] || [ -f "build.gradle.kts" ]; then
+            chmod +x ./gradlew
+            ./gradlew clean build -x test || echo "⚠️ Gradle build warnings"
+          else
+            echo "⚠️ No Maven or Gradle detected, compiling Java files directly"
+            find . -name '*.java' -exec javac {} \; || echo "⚠️ Java compile warnings"
+          fi
+
+      # Python setup
+      - if: matrix.language == 'python'
+        name: Setup Python dependencies
+        shell: bash
+        run: |
+          if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt || echo "⚠️ Dependency installation warnings"
+          fi
+          if [ -f "setup.py" ]; then
+            pip install -e . || echo "⚠️ Package installation warnings"
+          fi
+          python -m compileall . || echo "⚠️ Python syntax warnings"
+
+      # Perform CodeQL Analysis
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "scan-${{ matrix.language }}"
+          upload: "always"
